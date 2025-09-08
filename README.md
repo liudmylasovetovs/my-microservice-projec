@@ -1,177 +1,161 @@
-# Lesson-5 — Terraform (S3 Backend + DynamoDB Locks, VPC, ECR)
+# Lesson 7 — EKS + ECR + Helm (Django)
 
-Інфраструктура для **AWS `us-west-2` (Oregon)**.  
-Стейт зберігається у **S3** з **DynamoDB** для блокувань.
-
-- **S3 bucket (для стейту):** `clp-tfstate-938094936571-dev`  
-- **DynamoDB table (локи):** `terraform-locks`  
-- **VPC:** `lesson-5-vpc` (CIDR `10.0.0.0/16`, **3 public + 3 private**)  
-- **ECR:** `lesson-5-ecr` (**Scan on push: Enabled**)
-
-> ⚠️ **NAT Gateway — платний.** Після перевірки ДЗ виконайте `terraform destroy`.
+Регіон: **us-west-2**  
+Акаунт AWS: **938094936571**  
+Кластер: **lesson-6-eks**  
+ECR репозиторій: **938094936571.dkr.ecr.us-west-2.amazonaws.com/lesson-6-django**  
+Тег образу: **0.1.0**
 
 ---
 
-## Вимоги
+## 1) Передумови
 
-- **Terraform ≥ 1.6**
-- **AWS CLI**, налаштований на акаунт з регіоном `us-west-2`
-- **PowerShell** (команди нижче для PowerShell)
+- Terraform ≥ 1.13
+- AWS CLI 2.x (налаштований профіль із правами на EKS/ECR/IAM/EC2/S3)
+- kubectl, Helm v3, Docker Desktop (Linux engine)
+- У `backend.tf` використовується **S3 backend** із `use_lockfile = true` (без DynamoDB)
 
-### Перевірка
-~~~powershell
-terraform -version
-aws --version
-aws sts get-caller-identity
-~~~
+> Приклад `backend.tf`:
+>
+> ```hcl
+> terraform {
+>   backend "s3" {
+>     bucket       = "clp-tfstate-938094936571-dev"
+>     key          = "terraform.tfstate"
+>     region       = "us-west-2"
+>     encrypt      = true
+>     use_lockfile = true
+>   }
+> }
+> ```
 
----
-
-## Структура проєкту
-
-~~~text
-lesson-5/
-├── backend.tf
-├── variables.tf
-├── outputs.tf
-└── modules/
-    ├── s3-backend/
-    │   ├── s3.tf
-    │   ├── dynamodb.tf
-    │   ├── variables.tf
-    │   └── outputs.tf
-    ├── vpc/
-    │   ├── vpc.tf
-    │   ├── routes.tf
-    │   ├── variables.tf
-    │   └── outputs.tf
-    └── ecr/
-        ├── ecr.tf
-        ├── variables.tf
-        └── outputs.tf
-~~~
+> Якщо S3-бакета ще нема:
+> ```powershell
+> $REGION="us-west-2"; $ACCOUNT="938094936571"
+> $BUCKET="clp-tfstate-$ACCOUNT-dev"
+> aws s3api create-bucket --bucket $BUCKET --region $REGION --create-bucket-configuration LocationConstraint=$REGION
+> aws s3api put-bucket-versioning --bucket $BUCKET --versioning-configuration Status=Enabled
+> aws s3api put-bucket-encryption --bucket $BUCKET --server-side-encryption-configuration '{ "Rules": [ { "ApplyServerSideEncryptionByDefault": { "SSEAlgorithm": "AES256" } } ] }'
+> aws s3api put-public-access-block --bucket $BUCKET --public-access-block-configuration BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true
+> ```
 
 ---
 
-## Порядок запуску (бутстрап → міграція бекенду → повний apply)
+## 2) Інфраструктура (Terraform)
 
-У Terraform є «курка-яйце»: щоб зберігати стейт у S3, треба спочатку створити S3 та DynamoDB. Тому перший `apply` робимо **локальним стейтом**, далі **мігруємо в S3**.
+```powershell
+terraform init -reconfigure
+terraform plan -out=tfplan
+terraform apply tfplan
 
-### 1) Початковий запуск (локальний стейт)
-~~~powershell
-cd lesson-5
-terraform fmt -recursive
-terraform init
-terraform validate
+# kubeconfig для доступу до кластера
+aws eks update-kubeconfig --region us-west-2 --name lesson-6-eks
 
-# За потреби — тільки бекенд-ресурси (щоб швидше):
-# terraform plan -target=module.s3_backend -out tf.plan
-# terraform apply tf.plan
-
-# Або повний план:
-terraform plan -out tf.plan
-terraform apply tf.plan
-~~~
-
-### 2) Увімкнути віддалений бекенд (S3) та мігрувати стейт
-
-Переконайтеся, що `backend.tf` містить саме ці значення:
-
-~~~hcl
-terraform {
-  backend "s3" {
-    bucket         = "clp-tfstate-938094936571-dev"
-    key            = "lesson-5/terraform.tfstate"
-    region         = "us-west-2"
-    dynamodb_table = "terraform-locks"
-    encrypt        = true
-  }
-}
-~~~
-
-**Міграція стейту в S3:**
-~~~powershell
-terraform init -migrate-state
-~~~
-
-### 3) Повторна перевірка/дотяжки
-~~~powershell
-terraform plan
-terraform apply
-terraform output
-~~~
+# перевірка нод
+kubectl get nodes
 
 ---
 
-## Очікувані виводи (приклад)
+## 3) Образ (Docker + ECR)
 
-- `dynamodb_table_name = "terraform-locks"`
-- `ecr_repository_url  = "938094936571.dkr.ecr.us-west-2.amazonaws.com/lesson-5-ecr"`
-- `public_subnet_ids   = ["subnet-…", "subnet-…", "subnet-…"]`
-- `private_subnet_ids  = ["subnet-…", "subnet-…", "subnet-…"]`
-- `s3_bucket_name      = "clp-tfstate-938094936571-dev"`
-- `vpc_id              = "vpc-…"`
+$REGION = "us-west-2"
+$ACCOUNT = "938094936571"
+$ECR = "$ACCOUNT.dkr.ecr.$REGION.amazonaws.com/lesson-6-django"
+$TAG = "0.1.0"
 
----
+# логін у ECR
+$PASS = (aws ecr get-login-password --region $REGION).Trim()
+docker login --username AWS --password $PASS "$ACCOUNT.dkr.ecr.$REGION.amazonaws.com"
 
-## Перевірка в AWS Console
+# збірка та пуш
+docker build -t django-app:$TAG -f .\django\Dockerfile .\django
+docker tag django-app:$TAG "$ECR:$TAG"
+docker push "$ECR:$TAG"
 
-**S3 → Buckets → `clp-tfstate-938094936571-dev`**
-- Є `lesson-5/terraform.tfstate`
-- `Versioning: Enabled`
-- `Block public access: On`
+# перевірка тегів
+aws ecr list-images --repository-name lesson-6-django --query 'imageIds[].imageTag'
 
-**DynamoDB → Tables → `terraform-locks`**
-- Під час `plan/apply` створюється запис `LockID` (блокування)
 
-**VPC → `lesson-5-vpc`**
-- 6 підмереж (**3 public**, **3 private**) у `us-west-2a/b/c`
-- IGW прив’язаний до VPC, **1 NAT Gateway** у public-сабнеті
-- Route Tables: ``*-rt-public`` з `0.0.0.0/0` через **IGW**; ``*-rt-private`` через **NAT**
+## 4) PostgreSQL у кластері
 
-**ECR → `lesson-5-ecr`**
-- `Scan on push: Enabled`
-- Repository policy: доступ для `arn:aws:iam::<account-id>:root`
+kubectl apply -f .\k8s\postgres.yaml
+kubectl get pods -w
+kubectl get svc db
 
----
 
-## Типові команди
 
-~~~powershell
-terraform fmt -recursive
-terraform init
-terraform validate
-terraform plan
-terraform apply
-terraform state list
-terraform output
-terraform destroy
-~~~
+Змінні середовища, які використовує застосунок (через ConfigMap у Helm):
 
----
+POSTGRES_DB=appdb
+POSTGRES_USER=appuser
+POSTGRES_PASSWORD=apppassword
+DB_HOST=db
+DB_PORT=5432
+DJANGO_DEBUG=True
 
-## Якщо ресурси вже існували (імпорт у стейт)
+5) Деплой через Helm
 
-При помилках виду `AlreadyExists` / `ResourceInUse`:
+У charts\django-app\values.yaml мають бути налаштовані:
 
-~~~powershell
-# Імпорт DynamoDB таблиці локів
-terraform import module.s3_backend.aws_dynamodb_table.tf_locks terraform-locks
+image.repository = 938094936571.dkr.ecr.us-west-2.amazonaws.com/lesson-6-django
 
-# Імпорт ECR репозиторію
-terraform import module.ecr.aws_ecr_repository.repo lesson-5-ecr
-~~~
+image.tag = "0.1.0"
 
-Після імпорту — `terraform plan` → `terraform apply`.
+service: type LoadBalancer, port 80, targetPort 8000
 
----
+autoscaling: min 2, max 6, targetCPU 70
 
-## Вартість та чистка
+envConfig із змінними вище
 
-- **NAT Gateway — платний погодинно.**  
-- Після перевірки домашнього завдання:
+# metrics-server (для HPA)
+helm repo add metrics-server https://kubernetes-sigs.github.io/metrics-server/
+helm repo update
+helm install metrics-server metrics-server/metrics-server -n kube-system
+kubectl rollout status deployment/metrics-server -n kube-system
 
-~~~powershell
-cd lesson-5
-terraform destroy
-~~~
+# деплой застосунку
+helm install django-app .\charts\django-app\
+
+# перевірка ресурсів
+kubectl get pods
+kubectl get svc
+kubectl get hpa
+
+6) Доступ
+
+Отримай зовнішню адресу (DNS) сервісу типу LoadBalancer:
+
+kubectl get svc django-app
+
+
+Відкрий у браузері:
+
+http://<EXTERNAL-IP>/
+
+
+
+## 7) Приймальні перевірки
+
+# кластер працює
+kubectl get nodes -o wide
+
+# ECR містить образ
+aws ecr describe-repositories --repository-names lesson-6-django
+aws ecr list-images --repository-name lesson-6-django --query 'imageIds[].imageTag'
+
+# ресурси від Helm
+helm list
+kubectl get deploy,rs,pods
+kubectl get svc django-app
+kubectl get hpa django-app
+
+# ConfigMap та env у контейнері
+kubectl get cm -l app.kubernetes.io/name=django-app -o name
+kubectl exec -it deploy/django-app -- sh -lc 'env | grep -E "POSTGRES|DB_HOST|DJANGO_DEBUG"'
+
+
+## 8) Прибирання 
+helm uninstall django-app
+kubectl delete -f .\k8s\postgres.yaml
+helm uninstall metrics-server -n kube-system
+terraform destroy -auto-approve
