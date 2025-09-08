@@ -3,7 +3,7 @@ provider "aws" {
 }
 
 resource "aws_iam_role" "eks_cluster_role" {
-  name = "${var.cluster_name}-cluster-role"
+  name               = "${var.cluster_name}-cluster-role"
   assume_role_policy = data.aws_iam_policy_document.eks_assume.json
 }
 
@@ -44,7 +44,7 @@ resource "aws_eks_cluster" "this" {
 
 # Node Group (managed)
 resource "aws_iam_role" "eks_node_role" {
-  name = "${var.cluster_name}-node-role"
+  name               = "${var.cluster_name}-node-role"
   assume_role_policy = data.aws_iam_policy_document.node_assume.json
 }
 
