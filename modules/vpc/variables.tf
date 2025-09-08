@@ -1,15 +1,4 @@
-variable "vpc_cidr_block" {
-  type = string
-}
-variable "public_subnets" {
-  type = list(string)
-}
-variable "private_subnets" {
-  type = list(string)
-}
-variable "availability_zones" {
-  type = list(string)
-}
-variable "vpc_name" {
-  type = string
-}
+variable "name"         { type = string }
+variable "cidr_block"   { type = string }
+variable "az_count"     { type = number }
+variable "create_private" { type = bool }

@@ -1,16 +1,14 @@
+variable "region" {
+  type        = string
+  description = "AWS region"
+}
+
 variable "bucket_name" {
   type        = string
-  description = "S3 bucket for Terraform state"
+  description = "Unique S3 bucket name for TF state"
 }
 
-variable "table_name" {
+variable "dynamodb_table" {
   type        = string
-  description = "DynamoDB table name for state locking"
-  default     = "terraform-locks"
-}
-
-variable "force_destroy" {
-  type        = bool
-  description = "Allow force destroy of S3 bucket"
-  default     = false
+  description = "DynamoDB table name for TF locks"
 }

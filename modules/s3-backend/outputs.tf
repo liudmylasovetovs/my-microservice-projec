@@ -1,11 +1,7 @@
 output "bucket_name" {
-  value = aws_s3_bucket.tf_state.bucket
+  value = var.bucket_name
 }
 
-output "bucket_arn" {
-  value = aws_s3_bucket.tf_state.arn
-}
-
-output "dynamodb_table_name" {
-  value = aws_dynamodb_table.tf_locks.name
+output "dynamodb_table" {
+  value = var.dynamodb_table
 }

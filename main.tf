@@ -3,36 +3,46 @@ terraform {
   required_providers {
     aws = {
       source  = "hashicorp/aws"
-      version = "~> 5.0"
+      version = "~> 5.100"
     }
   }
 }
 
 provider "aws" {
-  region = var.aws_region
+  region = var.region
 }
 
-# 1) Модуль для S3 + DynamoDB
-module "s3_backend" {
-  source        = "./modules/s3-backend"
-  bucket_name   = var.tf_state_bucket_name
-  table_name    = "terraform-locks"
-  force_destroy = false
-}
-
-# 2) Модуль VPC
 module "vpc" {
-  source             = "./modules/vpc"
-  vpc_cidr_block     = "10.0.0.0/16"
-  public_subnets     = ["10.0.1.0/24", "10.0.2.0/24", "10.0.3.0/24"]
-  private_subnets    = ["10.0.4.0/24", "10.0.5.0/24", "10.0.6.0/24"]
-  availability_zones = ["us-west-2a", "us-west-2b", "us-west-2c"]
-  vpc_name           = "lesson-5-vpc"
+  source          = "./modules/vpc"
+  name            = var.project_name
+  cidr_block      = "10.0.0.0/16"
+  az_count        = 2
+  create_private  = false     # мінімізуємо витрати: тільки публічні сабнети
 }
 
-# 3) Модуль ECR
 module "ecr" {
-  source       = "./modules/ecr"
-  ecr_name     = "lesson-5-ecr"
-  scan_on_push = true
+  source                = "./modules/ecr"
+  repository_name       = "${var.project_name}-django"
+  image_tag_mutability  = "MUTABLE"
+  scan_on_push          = true
+}
+
+module "eks" {
+  source                = "./modules/eks"
+  cluster_name          = "${var.project_name}-eks"
+  vpc_id                = module.vpc.vpc_id
+  public_subnet_ids     = module.vpc.public_subnet_ids
+  region                = var.region
+  desired_size          = 2
+  min_size              = 2
+  max_size              = 3
+  instance_types        = ["t3.small"]
+}
+
+output "ecr_repository_url" {
+  value = module.ecr.repository_url
+}
+
+output "cluster_name" {
+  value = module.eks.cluster_name
 }
