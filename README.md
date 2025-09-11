@@ -1,161 +1,159 @@
-# Lesson 7 — EKS + ECR + Helm (Django)
+# Домашнє завдання до теми «Вивчення Agro CD + CD»
 
-Регіон: **us-west-2**  
-Акаунт AWS: **938094936571**  
-Кластер: **lesson-6-eks**  
-ECR репозиторій: **938094936571.dkr.ecr.us-west-2.amazonaws.com/lesson-6-django**  
-Тег образу: **0.1.0**
+## Кроки виконання завдання
 
----
+1. Jenkins + Helm + Terraform
 
-## 1) Передумови
+- Встановіть Jenkins через Helm, автоматизувавши встановлення через Terraform.
+- Забезпечте роботу Jenkins через Kubernetes Agent (Kaniko + Git).
+- Реалізуйте pipeline (через Jenkinsfile), який:
+- Збирає образ із Dockerfile;
+- Пушить його до ECR;
+- Оновлює тег у values.yaml іншого репозиторію;
+- Пушить зміни в main.
 
-- Terraform ≥ 1.13
-- AWS CLI 2.x (налаштований профіль із правами на EKS/ECR/IAM/EC2/S3)
-- kubectl, Helm v3, Docker Desktop (Linux engine)
-- У `backend.tf` використовується **S3 backend** із `use_lockfile = true` (без DynamoDB)
+2. Argo CD + Helm + Terraform
 
-> Приклад `backend.tf`:
->
-> ```hcl
-> terraform {
->   backend "s3" {
->     bucket       = "clp-tfstate-938094936571-dev"
->     key          = "terraform.tfstate"
->     region       = "us-west-2"
->     encrypt      = true
->     use_lockfile = true
->   }
-> }
-> ```
+- Встановіть Argo CD через Helm із використанням Terraform.
+- Налаштуйте Argo CD Application, який стежить за оновленням Helm-чарта.
+- Argo CD має автоматично синхронізувати зміни у кластері після оновлення Git.
 
-> Якщо S3-бакета ще нема:
-> ```powershell
-> $REGION="us-west-2"; $ACCOUNT="938094936571"
-> $BUCKET="clp-tfstate-$ACCOUNT-dev"
-> aws s3api create-bucket --bucket $BUCKET --region $REGION --create-bucket-configuration LocationConstraint=$REGION
-> aws s3api put-bucket-versioning --bucket $BUCKET --versioning-configuration Status=Enabled
-> aws s3api put-bucket-encryption --bucket $BUCKET --server-side-encryption-configuration '{ "Rules": [ { "ApplyServerSideEncryptionByDefault": { "SSEAlgorithm": "AES256" } } ] }'
-> aws s3api put-public-access-block --bucket $BUCKET --public-access-block-configuration BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true
-> ```
 
----
+## Налаштування змінних
+Створіть файл `terraform.tfvars` з наступними змінними:
 
-## 2) Інфраструктура (Terraform)
+```
+github_token  = <your github token>
+github_username  = <your github username>
+github_repo_url = "https://github.com/<repo>.git"
+```
 
-```powershell
-terraform init -reconfigure
-terraform plan -out=tfplan
-terraform apply tfplan
+Можете використати `terraform.tfvars.example` як приклад.
 
-# kubeconfig для доступу до кластера
-aws eks update-kubeconfig --region us-west-2 --name lesson-6-eks
+## Команди для ініціалізації, запуску та видалення
 
-# перевірка нод
+```bash
+# Ініціалізація
+terraform init
+
+# Перегляд змін інфраструктури
+terraform plan
+
+# Застосування інфраструктури
+terraform apply
+
+# Видалення інфраструктури
+terraform destroy
+```
+
+## Налаштування kubectl
+
+```bash
+# Підключення до EKS-кластеру
+aws eks update-kubeconfig --region us-west-2 --name [EKS_CLUSTER_NAME]
+
+# Перевірка доступу
 kubectl get nodes
+```
 
----
+## Завантаження Docker-образу на новостворений ECR-репозиторій
 
-## 3) Образ (Docker + ECR)
+```bash
+# Перехід у папку з Django-проєктом
+cd docker/django
 
-$REGION = "us-west-2"
-$ACCOUNT = "938094936571"
-$ECR = "$ACCOUNT.dkr.ecr.$REGION.amazonaws.com/lesson-6-django"
-$TAG = "0.1.0"
+# Збірка образу без кешу
+docker build --no-cache -t django-app .
 
-# логін у ECR
-$PASS = (aws ecr get-login-password --region $REGION).Trim()
-docker login --username AWS --password $PASS "$ACCOUNT.dkr.ecr.$REGION.amazonaws.com"
+# Логін у ECR
+aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin [ACCOUNT_ID].dkr.ecr.us-west-2.amazonaws.com
 
-# збірка та пуш
-docker build -t django-app:$TAG -f .\django\Dockerfile .\django
-docker tag django-app:$TAG "$ECR:$TAG"
-docker push "$ECR:$TAG"
+# Тегування
+docker tag django-app:latest [ACCOUNT_ID].dkr.ecr.us-west-2.amazonaws.com/django-app:latest
 
-# перевірка тегів
-aws ecr list-images --repository-name lesson-6-django --query 'imageIds[].imageTag'
+# Завантаження
+docker push [ACCOUNT_ID].dkr.ecr.us-west-2.amazonaws.com/django-app:latest
 
+# Повернення до кореневої директорії проєкту
+cd ../..
+```
 
-## 4) PostgreSQL у кластері
+## Застосування Helm:
 
-kubectl apply -f .\k8s\postgres.yaml
-kubectl get pods -w
-kubectl get svc db
+```bash
+cd charts/django-app
+helm install django-app .
+```
 
+where `django-app` is your helm chart name.
 
+## Видалення ресурсів:
 
-Змінні середовища, які використовує застосунок (через ConfigMap у Helm):
-
-POSTGRES_DB=appdb
-POSTGRES_USER=appuser
-POSTGRES_PASSWORD=apppassword
-DB_HOST=db
-DB_PORT=5432
-DJANGO_DEBUG=True
-
-5) Деплой через Helm
-
-У charts\django-app\values.yaml мають бути налаштовані:
-
-image.repository = 938094936571.dkr.ecr.us-west-2.amazonaws.com/lesson-6-django
-
-image.tag = "0.1.0"
-
-service: type LoadBalancer, port 80, targetPort 8000
-
-autoscaling: min 2, max 6, targetCPU 70
-
-envConfig із змінними вище
-
-# metrics-server (для HPA)
-helm repo add metrics-server https://kubernetes-sigs.github.io/metrics-server/
-helm repo update
-helm install metrics-server metrics-server/metrics-server -n kube-system
-kubectl rollout status deployment/metrics-server -n kube-system
-
-# деплой застосунку
-helm install django-app .\charts\django-app\
-
-# перевірка ресурсів
-kubectl get pods
-kubectl get svc
-kubectl get hpa
-
-6) Доступ
-
-Отримай зовнішню адресу (DNS) сервісу типу LoadBalancer:
-
-kubectl get svc django-app
-
-
-Відкрий у браузері:
-
-http://<EXTERNAL-IP>/
-
-
-
-## 7) Приймальні перевірки
-
-# кластер працює
-kubectl get nodes -o wide
-
-# ECR містить образ
-aws ecr describe-repositories --repository-names lesson-6-django
-aws ecr list-images --repository-name lesson-6-django --query 'imageIds[].imageTag'
-
-# ресурси від Helm
-helm list
-kubectl get deploy,rs,pods
-kubectl get svc django-app
-kubectl get hpa django-app
-
-# ConfigMap та env у контейнері
-kubectl get cm -l app.kubernetes.io/name=django-app -o name
-kubectl exec -it deploy/django-app -- sh -lc 'env | grep -E "POSTGRES|DB_HOST|DJANGO_DEBUG"'
-
-
-## 8) Прибирання 
+Kubernetes (PODs, Services, Deployments etc.)
+```bash
 helm uninstall django-app
-kubectl delete -f .\k8s\postgres.yaml
-helm uninstall metrics-server -n kube-system
-terraform destroy -auto-approve
+```
+
+where `django-app` is your helm chart name.
+
+Terraform (EKS, VPC, ECR etc.)
+
+```bash
+terraform destroy
+```
+
+## Додаткова інформація:
+
+Якщо ви хочете оновити helm chart:
+
+```bash
+helm upgrade django-app .
+```
+
+Якщо ви хочете оновити terraform:
+
+```bash
+terraform init -upgrade
+terraform plan
+terraform apply
+```
+
+### Доступ до Jenkins
+
+```bash
+# Jenkins URL
+kubectl get services -n jenkins
+
+# Отримати початковий пароль Jenkins
+kubectl exec --namespace jenkins -it svc/jenkins -c jenkins -- /bin/cat /run/secrets/additional/chart-admin-password && echo
+
+# Чи вже налаштований пароль: admin123
+```
+
+### Доступ до Argo CD
+```
+# Отримати Argo CD URL
+kubectl get services -n argocd
+
+# Отримати початковий пароль для admin
+kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d
+```
+
+### Налаштування віддаленого бекенду
+
+Після початкового розгортання для активації віддаленого бекенду:
+
+1. Розкоментуйте блок конфігурації бекенду в `backend.tf`.
+
+2. Виконайте команду `terraform init` з параметром для повторного підключення бекенду:
+
+```bash
+terraform init -reconfigure
+```
+
+### Відновлення
+1. Закоментуйте конфігурацію бекенду в `backend.tf`.
+2. Виконайте `terraform init`.
+3. Застосуйте конфігурацію `terraform apply`.
+4. Розкоментуйте бекенд та виконайте `terraform init -reconfigure`.
+---

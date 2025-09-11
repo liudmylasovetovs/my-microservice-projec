@@ -1,11 +1,40 @@
 variable "region" {
+  description = "AWS region for deployment"
   type        = string
-  description = "AWS region"
   default     = "us-west-2"
 }
 
-variable "project_name" {
+variable "github_username" {
+  description = "GitHub username"
   type        = string
-  description = "Name prefix for resources"
-  default     = "lesson-6"
+  sensitive   = true
+}
+
+variable "github_token" {
+  description = "GitHub Personal Access Token"
+  type        = string
+  sensitive   = true
+}
+
+variable "github_repo_url" {
+  description = "GitHub repository name"
+  type        = string
+}
+
+variable "instance_type" {
+  description = "EC2 instance type for the worker nodes"
+  type        = string
+  default     = "t2.small"
+}
+
+variable "repository_name" {
+  description = "Name of the ECR repository"
+  type        = string
+  default     = "ecr-repo-django-app"
+}
+
+variable "cluster_name" {
+  description = "Name of the EKS cluster"
+  type        = string
+  default     = "lesson-8-9-eks"
 }
