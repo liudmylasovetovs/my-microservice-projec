@@ -1,13 +1,14 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ include "django-app.fullname" . }}
+  name: {{ .Release.Name }}-django
 spec:
   type: {{ .Values.service.type }}
   selector:
-    app.kubernetes.io/name: {{ include "django-app.name" . }}
-    app.kubernetes.io/instance: {{ .Release.Name }}
+    app: {{ .Release.Name }}-django
   ports:
-    - name: http
-      port: {{ .Values.service.port }}
+    - port: {{ .Values.service.port }}
       targetPort: {{ .Values.service.targetPort }}
+      protocol: TCP
+      name: http
+

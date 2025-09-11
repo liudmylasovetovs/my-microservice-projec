@@ -1,8 +1,36 @@
-variable "cluster_name" { type = string }
-variable "vpc_id" { type = string }
-variable "public_subnet_ids" { type = list(string) }
-variable "region" { type = string }
-variable "desired_size" { type = number }
-variable "min_size" { type = number }
-variable "max_size" { type = number }
-variable "instance_types" { type = list(string) }
+variable "cluster_name" {
+  description = "Name of the EKS cluster"
+  type        = string
+  default     = "example-lesson-8-9-eks"
+}
+
+variable "subnet_ids" {
+  description = "List of subnet IDs for the EKS cluster"
+  type        = list(string)
+}
+
+variable "node_group_name" {
+  description = "Name of the node group"
+  default     = "node-group-roman"
+}
+
+variable "instance_type" {
+  description = "EC2 instance type for the worker nodes"
+  default     = "t3.micro"
+}
+
+variable "desired_size" {
+  description = "Desired number of worker nodes"
+  default     = 2
+}
+
+variable "max_size" {
+  description = "Maximum number of worker nodes"
+  default     = 3
+}
+
+variable "min_size" {
+  description = "Minimum number of worker nodes"
+  default     = 1
+}
+
