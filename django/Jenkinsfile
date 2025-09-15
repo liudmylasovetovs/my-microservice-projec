@@ -17,6 +17,11 @@ spec:
         - sleep
       args:
         - 99d
+     # Lightweight container that has git + coreutils
+    - name: git
+      image: alpine/git
+      command: ["cat"]       # keep it idle so Jenkins can exec into it
+      tty: true
 """
     }
   }
@@ -35,6 +40,7 @@ spec:
       steps {
         container('kaniko') {
           sh '''
+            cd django
             /kaniko/executor \\
               --context `pwd` \\
               --dockerfile `pwd`/Dockerfile \\
@@ -50,13 +56,14 @@ spec:
     stage('Update Chart Tag in Git') {
       steps {
         container('git') {
-          withCredentials([usernamePassword(credentialsId: 'github-token', usernameVariable: ${github_username}, passwordVariable: ${github_token})]) {
+          withCredentials([usernamePassword(credentialsId: 'github-token', usernameVariable: 'USERNAME', passwordVariable: 'PASSWORD')]) {
             sh '''
-              git clone https://${github_username}:${github_token}@github.com/${github_username}/my-microservice-projec.git
+              echo $USERNAME
+              git clone https://$USERNAME:$PASSWORD@github.com/orm81zp/devops-cicd.git
               set -x
-              cd my-microservice-projec
-              git checkout -b lesson-10
-              cd my-microservice-projec/charts/django-app
+              cd devops
+              git checkout final_project
+              cd charts/django-app
 
               sed -i "s/tag: .*/tag: $IMAGE_TAG/" values.yaml
 
@@ -65,7 +72,7 @@ spec:
 
               git add values.yaml
               git commit -m "Update image tag to $IMAGE_TAG"
-              git push origin lesson-10
+              git push origin final_project
             '''
           }
         }

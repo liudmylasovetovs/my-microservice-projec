@@ -1,7 +1,10 @@
+variable "region" {
+  description = "AWS region for deployment"
+  default     = "us-west-2"
+}
+
 variable "cluster_name" {
   description = "Name of the EKS cluster"
-  type        = string
-  default     = "example-lesson-8-9-eks"
 }
 
 variable "subnet_ids" {
@@ -9,9 +12,14 @@ variable "subnet_ids" {
   type        = list(string)
 }
 
+variable "node_subnet_ids" {
+  description = "List of subnet IDs for the EKS node group"
+  type        = list(string)
+}
+
 variable "node_group_name" {
   description = "Name of the node group"
-  default     = "node-group-roman"
+  default     = "node-group-liudmyla"
 }
 
 variable "instance_type" {
